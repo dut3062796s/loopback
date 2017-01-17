@@ -807,6 +807,31 @@ module.exports = function(User) {
       UserModel.validatesUniquenessOf('username', {message: 'User already exists'});
     }
 
+    UserModel.once('attached', function() {
+      if (UserModel.app.get('logoutSessionsOnSensitiveChanges') !== undefined)
+        return;
+
+      g.warn([
+        '',
+        'The user model %j is attached to an application that does not specify',
+        'whether other sessions should be invalidated when a password or',
+        'an email was changed. Invalidating sessions is important for security',
+        'reasons, to allow users to recover from the situation where',
+        'an attacker got access to their account.',
+        '',
+        'We are recommending to turn this feature on by setting',
+        '"{{logoutSessionsOnSensitiveChanges}}" to {{true}} in',
+        '{{server/config.json}}, unless you have implemented your own solution',
+        'for token invalidation.',
+        '',
+        'You should also enable "{{injectOptionsFromRemoteContext}}" in %s\'s',
+        'settings (typically via common/models/*.json file). This is',
+        'needed to allow the invalidation algorithm to keep the current',
+        'session valid.',
+        ''
+      ].join('\n'), UserModel.modelName, UserModel.modelName);
+    });
+
     return UserModel;
   };
 
@@ -832,6 +857,8 @@ module.exports = function(User) {
 
   // Delete old sessions once email is updated
   User.observe('before save', function beforeEmailUpdate(ctx, next) {
+    if (!ctx.Model.app.get('logoutSessionsOnSensitiveChanges')) return next();
+
     var emailChanged;
     if (ctx.isNewInstance) return next();
     if (!ctx.where && !ctx.instance) return next();
@@ -872,6 +899,8 @@ module.exports = function(User) {
   });
 
   User.observe('after save', function afterEmailUpdate(ctx, next) {
+    if (!ctx.Model.app.get('logoutSessionsOnSensitiveChanges')) return next();
+
     if (!ctx.instance && !ctx.data) return next();
     if (!ctx.hookState.originalUserData) return next();
 
